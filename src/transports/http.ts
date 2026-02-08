@@ -7,8 +7,8 @@ import { renderAuthSuccess, renderAuthError, loadWebFile } from "../web/template
 
 /**
  * Security headers for HTML responses
- * Note: HTTP mode is designed for localhost development/testing only.
- * For production deployments, use stdio mode with Claude Desktop.
+ * Note: HTTP mode supports both localhost development and cloud deployment.
+ * For cloud deployment, set MCP_AUTH_TOKEN to enable bearer token authentication.
  */
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
@@ -34,6 +34,33 @@ export function isLocalhostOrigin(origin: string): boolean {
     // Invalid URL - reject
     return false;
   }
+}
+
+/**
+ * Validate bearer token from Authorization header.
+ * If MCP_AUTH_TOKEN env var is not set, auth is disabled (localhost dev mode).
+ * If set, the request must include a matching Authorization header.
+ * Accepts both "Bearer <token>" and raw token formats.
+ * Exported for testing.
+ */
+export function validateBearerToken(req: http.IncomingMessage): boolean {
+  const expectedToken = process.env.MCP_AUTH_TOKEN;
+  if (!expectedToken) {
+    return true; // No auth configured - localhost dev mode
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return false;
+  }
+
+  // Accept "Bearer <token>" format
+  if (authHeader.startsWith('Bearer ')) {
+    return authHeader.slice(7) === expectedToken;
+  }
+
+  // Accept raw token (some clients send just the token value)
+  return authHeader === expectedToken;
 }
 
 export interface HttpTransportConfig {
@@ -121,10 +148,13 @@ export class HttpTransportHandler {
     const httpServer = http.createServer(async (req, res) => {
       // Validate Origin header to prevent DNS rebinding attacks (MCP spec requirement)
       const origin = req.headers.origin;
+      const hasValidToken = validateBearerToken(req);
+      const authTokenConfigured = !!process.env.MCP_AUTH_TOKEN;
 
       // For requests with Origin header, validate it using proper URL parsing
       // This prevents bypass via subdomains like localhost.attacker.com
-      if (origin && !isLocalhostOrigin(origin)) {
+      // When a valid bearer token is present, origin check is bypassed (cloud mode)
+      if (origin && !isLocalhostOrigin(origin) && !hasValidToken) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           error: 'Forbidden: Invalid origin',
@@ -145,14 +175,26 @@ export class HttpTransportHandler {
         return;
       }
 
-      // Handle CORS - restrict to localhost only for security
-      // HTTP mode is designed for local development/testing only
-      const allowedCorsOrigin = origin && isLocalhostOrigin(origin)
-        ? origin
-        : `http://${host}:${port}`;
+      // Bearer token authentication for non-health endpoints
+      // When MCP_AUTH_TOKEN is set, all routes except /health require a valid token
+      if (authTokenConfigured && req.url !== '/health' && !hasValidToken) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'Unauthorized',
+          message: 'Valid Authorization header required'
+        }));
+        return;
+      }
+
+      // Handle CORS
+      // When MCP_AUTH_TOKEN is set, allow any origin (token provides security)
+      // Otherwise restrict to localhost only
+      const allowedCorsOrigin = authTokenConfigured
+        ? (origin || '*')
+        : (origin && isLocalhostOrigin(origin) ? origin : `http://${host}:${port}`);
       res.setHeader('Access-Control-Allow-Origin', allowedCorsOrigin);
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id, Authorization');
       
       if (req.method === 'OPTIONS') {
         res.writeHead(200);

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { isLocalhostOrigin } from '../../../transports/http.js';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { isLocalhostOrigin, validateBearerToken } from '../../../transports/http.js';
+import type http from 'http';
 
 describe('isLocalhostOrigin', () => {
   describe('valid localhost origins', () => {
@@ -74,6 +75,77 @@ describe('isLocalhostOrigin', () => {
     it('should reject other loopback addresses', () => {
       // Only exact 127.0.0.1 is allowed, not other loopback addresses
       expect(isLocalhostOrigin('http://127.0.0.2')).toBe(false);
+    });
+  });
+});
+
+describe('validateBearerToken', () => {
+  const originalEnv = process.env.MCP_AUTH_TOKEN;
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.MCP_AUTH_TOKEN;
+    } else {
+      process.env.MCP_AUTH_TOKEN = originalEnv;
+    }
+  });
+
+  function makeRequest(headers: Record<string, string> = {}): http.IncomingMessage {
+    return { headers } as unknown as http.IncomingMessage;
+  }
+
+  describe('when MCP_AUTH_TOKEN is not set', () => {
+    beforeEach(() => {
+      delete process.env.MCP_AUTH_TOKEN;
+    });
+
+    it('should return true (no auth required)', () => {
+      expect(validateBearerToken(makeRequest())).toBe(true);
+    });
+
+    it('should return true even without Authorization header', () => {
+      expect(validateBearerToken(makeRequest())).toBe(true);
+    });
+  });
+
+  describe('when MCP_AUTH_TOKEN is set', () => {
+    beforeEach(() => {
+      process.env.MCP_AUTH_TOKEN = 'my-secret-token';
+    });
+
+    it('should accept valid Bearer token', () => {
+      const req = makeRequest({ authorization: 'Bearer my-secret-token' });
+      expect(validateBearerToken(req)).toBe(true);
+    });
+
+    it('should accept raw token (no Bearer prefix)', () => {
+      const req = makeRequest({ authorization: 'my-secret-token' });
+      expect(validateBearerToken(req)).toBe(true);
+    });
+
+    it('should reject missing Authorization header', () => {
+      const req = makeRequest();
+      expect(validateBearerToken(req)).toBe(false);
+    });
+
+    it('should reject invalid token', () => {
+      const req = makeRequest({ authorization: 'Bearer wrong-token' });
+      expect(validateBearerToken(req)).toBe(false);
+    });
+
+    it('should reject empty Authorization header', () => {
+      const req = makeRequest({ authorization: '' });
+      expect(validateBearerToken(req)).toBe(false);
+    });
+
+    it('should reject Bearer with extra whitespace', () => {
+      const req = makeRequest({ authorization: 'Bearer  my-secret-token' });
+      expect(validateBearerToken(req)).toBe(false);
+    });
+
+    it('should be case-sensitive for token value', () => {
+      const req = makeRequest({ authorization: 'Bearer MY-SECRET-TOKEN' });
+      expect(validateBearerToken(req)).toBe(false);
     });
   });
 });
