@@ -99,7 +99,78 @@ docker build -t google-calendar-mcp .
 docker run -it google-calendar-mcp npm run auth
 ```
 
-## Cloud Deployment
+## Cloud Deployment with Bearer Token Auth
+
+The HTTP transport supports bearer token authentication for cloud deployments. When `MCP_AUTH_TOKEN` is set, all requests (except `/health`) must include a matching `Authorization: Bearer <token>` header.
+
+### Environment Variables for Cloud
+
+| Variable | Description |
+|----------|-------------|
+| `MCP_AUTH_TOKEN` | Bearer token for client authentication |
+| `GOOGLE_OAUTH_CREDENTIALS_JSON` | OAuth credentials as JSON string (alternative to file) |
+| `GOOGLE_CALENDAR_MCP_TOKENS_JSON` | Pre-authenticated tokens as JSON string |
+| `TRANSPORT` | Set to `http` |
+| `HOST` | Set to `0.0.0.0` for cloud |
+| `PORT` | Server port (Railway sets this automatically) |
+
+### Railway + ElevenLabs
+
+Railway is a simple Docker-based PaaS with HTTPS out of the box.
+
+#### 1. Authenticate locally first
+
+You need Google OAuth tokens before deploying. Run locally:
+
+```bash
+npm run auth
+```
+
+Then copy your tokens file content:
+
+```bash
+cat ~/.config/google-calendar-mcp/tokens.json
+```
+
+#### 2. Deploy to Railway
+
+1. Create a new Railway project from your GitHub repo
+2. Set these environment variables in Railway:
+
+```bash
+TRANSPORT=http
+HOST=0.0.0.0
+MCP_AUTH_TOKEN=<generate-a-strong-secret-token>
+GOOGLE_OAUTH_CREDENTIALS_JSON='<paste your gcp-oauth.keys.json content>'
+GOOGLE_CALENDAR_MCP_TOKENS_JSON='<paste your tokens.json content>'
+```
+
+3. Railway will auto-detect the Dockerfile and deploy
+4. Note your Railway public URL (e.g., `https://your-app.up.railway.app`)
+
+#### 3. Verify deployment
+
+```bash
+# Health check (no auth required)
+curl https://your-app.up.railway.app/health
+
+# MCP request (requires auth)
+curl -H "Authorization: Bearer <your-token>" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}' \
+  https://your-app.up.railway.app/mcp
+```
+
+#### 4. Configure ElevenLabs
+
+In your ElevenLabs agent configuration, add an MCP server:
+
+- **URL**: `https://your-app.up.railway.app/mcp`
+- **Transport**: HTTP Streamable or SSE
+- **Secret Token**: The same value you set as `MCP_AUTH_TOKEN`
+
+ElevenLabs sends the secret token as an `Authorization` header, which the server validates automatically.
 
 ### Google Cloud Run
 

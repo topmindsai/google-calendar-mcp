@@ -87,7 +87,38 @@ export class TokenManager {
     await fs.writeFile(this.tokenPath, JSON.stringify(tokens, null, 2), { mode: 0o600 });
   }
 
+  /**
+   * Bootstrap tokens from GOOGLE_CALENDAR_MCP_TOKENS_JSON env var.
+   * If the env var is set and no token file exists, writes the tokens to disk
+   * so that token refresh can persist across restarts.
+   */
+  private async bootstrapTokensFromEnv(): Promise<boolean> {
+    const tokensJson = process.env.GOOGLE_CALENDAR_MCP_TOKENS_JSON;
+    if (!tokensJson) {
+      return false;
+    }
+
+    // Only bootstrap if token file doesn't exist
+    const tokenExists = await fs.access(this.tokenPath).then(() => true).catch(() => false);
+    if (tokenExists) {
+      return false;
+    }
+
+    try {
+      const tokens = JSON.parse(tokensJson);
+      await this.writeTokenFile(tokens);
+      process.stderr.write(`Bootstrapped tokens from GOOGLE_CALENDAR_MCP_TOKENS_JSON env var\n`);
+      return true;
+    } catch (error) {
+      process.stderr.write(`Failed to bootstrap tokens from env var: ${error}\n`);
+      return false;
+    }
+  }
+
   private async loadMultiAccountTokens(): Promise<MultiAccountTokens> {
+    // Try bootstrapping from env var if no token file exists
+    await this.bootstrapTokensFromEnv();
+
     try {
       const fileContent = await fs.readFile(this.tokenPath, "utf-8");
       const parsed = JSON.parse(fileContent);

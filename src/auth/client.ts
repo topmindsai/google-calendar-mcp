@@ -2,10 +2,7 @@ import { OAuth2Client } from 'google-auth-library';
 import * as fs from 'fs/promises';
 import { getKeysFilePath, generateCredentialsErrorMessage, OAuthCredentials } from './utils.js';
 
-async function loadCredentialsFromFile(): Promise<OAuthCredentials> {
-  const keysContent = await fs.readFile(getKeysFilePath(), "utf-8");
-  const keys = JSON.parse(keysContent);
-
+function parseCredentialsJson(keys: any): OAuthCredentials {
   if (keys.installed) {
     // Standard OAuth credentials file format
     const { client_id, client_secret, redirect_uris } = keys.installed;
@@ -18,8 +15,22 @@ async function loadCredentialsFromFile(): Promise<OAuthCredentials> {
       redirect_uris: keys.redirect_uris || ['http://localhost:3000/oauth2callback']
     };
   } else {
-    throw new Error('Invalid credentials file format. Expected either "installed" object or direct client_id/client_secret fields.');
+    throw new Error('Invalid credentials format. Expected either "installed" object or direct client_id/client_secret fields.');
   }
+}
+
+async function loadCredentialsFromFile(): Promise<OAuthCredentials> {
+  // Check GOOGLE_OAUTH_CREDENTIALS_JSON env var first (for cloud deployments)
+  const credentialsJson = process.env.GOOGLE_OAUTH_CREDENTIALS_JSON;
+  if (credentialsJson) {
+    const keys = JSON.parse(credentialsJson);
+    return parseCredentialsJson(keys);
+  }
+
+  // Fall back to file-based credentials
+  const keysContent = await fs.readFile(getKeysFilePath(), "utf-8");
+  const keys = JSON.parse(keysContent);
+  return parseCredentialsJson(keys);
 }
 
 async function loadCredentialsWithFallback(): Promise<OAuthCredentials> {
