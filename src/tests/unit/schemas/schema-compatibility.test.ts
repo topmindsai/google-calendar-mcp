@@ -100,40 +100,36 @@ describe('Provider-Specific Schema Compatibility', () => {
       }
     });
 
-    it('should convert list-events calendarId anyOf to string for OpenAI', () => {
+    it('should have list-events calendarId as simple string (no anyOf needed)', () => {
       const tools = ToolRegistry.getToolsWithSchemas();
       const listEventsTool = tools.find(t => t.name === 'list-events');
 
       expect(listEventsTool).toBeDefined();
 
-      // Convert to OpenAI format
       const openaiSchema = convertMCPSchemaToOpenAI(listEventsTool!.inputSchema);
 
-      // OpenAI should see a simple string type, not anyOf
+      // calendarId is already a simple string type — no conversion needed
       expect(openaiSchema.properties.calendarId.type).toBe('string');
       expect(openaiSchema.properties.calendarId.anyOf).toBeUndefined();
 
-      // Description should mention JSON array format
-      expect(openaiSchema.properties.calendarId.description).toContain('JSON array string format');
-      expect(openaiSchema.properties.calendarId.description).toMatch(/\[".*"\]/);
+      // Description should mention JSON array string format
+      expect(openaiSchema.properties.calendarId.description).toContain('JSON array string');
     });
 
-    it('should convert search-events calendarId anyOf to string for OpenAI', () => {
+    it('should have search-events calendarId as simple string (no anyOf needed)', () => {
       const tools = ToolRegistry.getToolsWithSchemas();
       const searchEventsTool = tools.find(t => t.name === 'search-events');
 
       expect(searchEventsTool).toBeDefined();
 
-      // Convert to OpenAI format
       const openaiSchema = convertMCPSchemaToOpenAI(searchEventsTool!.inputSchema);
 
-      // OpenAI should see a simple string type, not anyOf
+      // calendarId is already a simple string type — no conversion needed
       expect(openaiSchema.properties.calendarId.type).toBe('string');
       expect(openaiSchema.properties.calendarId.anyOf).toBeUndefined();
 
-      // Description should mention JSON array format
-      expect(openaiSchema.properties.calendarId.description).toContain('JSON array string format');
-      expect(openaiSchema.properties.calendarId.description).toMatch(/\[".*"\]/);
+      // Description should mention JSON array string format
+      expect(openaiSchema.properties.calendarId.description).toContain('JSON array string');
     });
 
     it('should ensure all converted schemas are valid objects', () => {
@@ -149,52 +145,31 @@ describe('Provider-Specific Schema Compatibility', () => {
     });
   });
 
-  describe('Python MCP Client Compatibility', () => {
-    it('should ensure list-events supports native arrays via anyOf', () => {
+  describe('MCP Client Compatibility', () => {
+    it('should ensure list-events calendarId is a simple string type', () => {
       const tools = ToolRegistry.getToolsWithSchemas();
       const listEventsTool = tools.find(t => t.name === 'list-events');
 
       expect(listEventsTool).toBeDefined();
 
-      // Raw MCP schema should have anyOf for Python clients
       const schema = listEventsTool!.inputSchema as JSONSchemaObject;
       expect(schema.properties).toBeDefined();
 
       const calendarIdProp = schema.properties!.calendarId;
-      expect(calendarIdProp.anyOf).toBeDefined();
-      expect(Array.isArray(calendarIdProp.anyOf)).toBe(true);
-      expect(calendarIdProp.anyOf.length).toBe(2);
-
-      // Verify it has both string and array options
-      const types = calendarIdProp.anyOf.map((t: any) => t.type);
-      expect(types).toContain('string');
-      expect(types).toContain('array');
+      expect(calendarIdProp.type).toBe('string');
+      expect(calendarIdProp.anyOf).toBeUndefined();
     });
 
-    it('should ensure all other tools do NOT use anyOf/oneOf/allOf (except for account parameter)', () => {
+    it('should ensure NO tools use anyOf/oneOf/allOf in any property', () => {
       const tools = ToolRegistry.getToolsWithSchemas();
       const problematicFeatures = ['oneOf', 'anyOf', 'allOf', 'not'];
       const issues: string[] = [];
 
-      // Tools explicitly allowed to use anyOf for calendarId (multi-calendar support)
-      const multiCalendarTools = ['list-events', 'search-events'];
-
       for (const tool of tools) {
-        // Skip multi-calendar tools - they're explicitly allowed to use anyOf for calendarId
-        if (multiCalendarTools.includes(tool.name)) {
-          continue;
-        }
-
         const schema = tool.inputSchema as JSONSchemaObject;
 
-        // Check each property for problematic features
         if (schema.properties) {
           for (const [propName, propSchema] of Object.entries(schema.properties)) {
-            // Skip account parameter - it's allowed to use anyOf for string | string[]
-            if (propName === 'account') {
-              continue;
-            }
-
             const propStr = JSON.stringify(propSchema);
             for (const feature of problematicFeatures) {
               if (propStr.includes(`"${feature}"`)) {
@@ -206,7 +181,7 @@ describe('Provider-Specific Schema Compatibility', () => {
       }
 
       if (issues.length > 0) {
-        throw new Error(`Raw MCP schema compatibility issues found:\n${issues.join('\n')}`);
+        throw new Error(`Schema compatibility issues found:\n${issues.join('\n')}`);
       }
     });
   });
