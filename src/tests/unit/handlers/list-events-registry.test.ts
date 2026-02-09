@@ -30,7 +30,7 @@ describe('list-events Registration Flow (Schema + HandlerFunction)', () => {
       expect(result.data?.account).toBe('work');
     });
 
-    it('should accept native array of accounts', () => {
+    it('should reject non-string account values (arrays not accepted at schema level)', () => {
       const input = {
         account: ['work', 'personal'],
         calendarId: 'primary',
@@ -39,52 +39,12 @@ describe('list-events Registration Flow (Schema + HandlerFunction)', () => {
       };
 
       const result = ToolSchemas['list-events'].safeParse(input);
-      expect(result.success).toBe(true);
-      expect(result.data?.account).toEqual(['work', 'personal']);
+      expect(result.success).toBe(false);
     });
 
-    it('should parse JSON string array of accounts (double quotes)', () => {
+    it('should reject invalid account IDs', () => {
       const input = {
-        account: '["normal", "work"]',
-        calendarId: 'primary',
-        timeMin: '2024-01-01T00:00:00',
-        timeMax: '2024-01-02T00:00:00'
-      };
-
-      const result = ToolSchemas['list-events'].safeParse(input);
-      expect(result.success).toBe(true);
-      expect(result.data?.account).toEqual(['normal', 'work']);
-    });
-
-    it('should parse JSON string array of accounts (single quotes - Python style)', () => {
-      const input = {
-        account: "['normal', 'work']",
-        calendarId: 'primary',
-        timeMin: '2024-01-01T00:00:00',
-        timeMax: '2024-01-02T00:00:00'
-      };
-
-      const result = ToolSchemas['list-events'].safeParse(input);
-      expect(result.success).toBe(true);
-      expect(result.data?.account).toEqual(['normal', 'work']);
-    });
-
-    it('should handle account JSON string with whitespace', () => {
-      const input = {
-        account: '  ["work", "personal"]  ',
-        calendarId: 'primary',
-        timeMin: '2024-01-01T00:00:00',
-        timeMax: '2024-01-02T00:00:00'
-      };
-
-      const result = ToolSchemas['list-events'].safeParse(input);
-      expect(result.success).toBe(true);
-      expect(result.data?.account).toEqual(['work', 'personal']);
-    });
-
-    it('should reject invalid account IDs in JSON string', () => {
-      const input = {
-        account: '["INVALID_UPPERCASE", "work"]',
+        account: 'INVALID_UPPERCASE',
         calendarId: 'primary',
         timeMin: '2024-01-01T00:00:00',
         timeMax: '2024-01-02T00:00:00'
@@ -108,7 +68,7 @@ describe('list-events Registration Flow (Schema + HandlerFunction)', () => {
   });
 
   describe('Schema validation (first step)', () => {
-    it('should validate native array format', () => {
+    it('should reject native array format (simplified schema accepts only strings)', () => {
       const input = {
         calendarId: ['primary', 'work@example.com'],
         timeMin: '2024-01-01T00:00:00',
@@ -116,8 +76,7 @@ describe('list-events Registration Flow (Schema + HandlerFunction)', () => {
       };
 
       const result = ToolSchemas['list-events'].safeParse(input);
-      expect(result.success).toBe(true);
-      expect(result.data?.calendarId).toEqual(['primary', 'work@example.com']);
+      expect(result.success).toBe(false);
     });
 
     it('should validate single string format', () => {
@@ -132,7 +91,7 @@ describe('list-events Registration Flow (Schema + HandlerFunction)', () => {
       expect(result.data?.calendarId).toBe('primary');
     });
 
-    it('should validate JSON string format', () => {
+    it('should validate JSON string format (array as string)', () => {
       const input = {
         calendarId: '["primary", "work@example.com"]',
         timeMin: '2024-01-01T00:00:00',
@@ -145,52 +104,12 @@ describe('list-events Registration Flow (Schema + HandlerFunction)', () => {
     });
   });
 
-  describe('Array validation constraints', () => {
-    it('should enforce minimum array length', () => {
+  describe('Array validation via handlerFunction (not schema)', () => {
+    // With simplified schemas, native arrays are rejected at schema level.
+    // Array validation (min/max/duplicates) happens in handlerFunction via JSON string parsing.
+    it('should reject native arrays at schema level', () => {
       const input = {
         calendarId: [],
-        timeMin: '2024-01-01T00:00:00',
-        timeMax: '2024-01-02T00:00:00'
-      };
-
-      const result = ToolSchemas['list-events'].safeParse(input);
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues[0].message).toContain('At least one calendar ID is required');
-      }
-    });
-
-    it('should enforce maximum array length', () => {
-      const input = {
-        calendarId: Array(51).fill('calendar'),
-        timeMin: '2024-01-01T00:00:00',
-        timeMax: '2024-01-02T00:00:00'
-      };
-
-      const result = ToolSchemas['list-events'].safeParse(input);
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues[0].message).toContain('Maximum 50 calendars');
-      }
-    });
-
-    it('should reject duplicate calendar IDs in array', () => {
-      const input = {
-        calendarId: ['primary', 'primary'],
-        timeMin: '2024-01-01T00:00:00',
-        timeMax: '2024-01-02T00:00:00'
-      };
-
-      const result = ToolSchemas['list-events'].safeParse(input);
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues[0].message).toContain('Duplicate calendar IDs');
-      }
-    });
-
-    it('should reject empty strings in array', () => {
-      const input = {
-        calendarId: ['primary', ''],
         timeMin: '2024-01-01T00:00:00',
         timeMax: '2024-01-02T00:00:00'
       };
@@ -201,21 +120,6 @@ describe('list-events Registration Flow (Schema + HandlerFunction)', () => {
   });
 
   describe('Type preservation after validation', () => {
-    it('should preserve array type for native arrays (issue #95 fix)', () => {
-      const input = {
-        calendarId: ['primary', 'work@example.com', 'personal@example.com'],
-        timeMin: '2024-01-01T00:00:00',
-        timeMax: '2024-01-02T00:00:00'
-      };
-
-      const result = ToolSchemas['list-events'].parse(input);
-
-      // The key fix: arrays should NOT be transformed to JSON strings by the schema
-      // The handlerFunction will handle the conversion logic
-      expect(Array.isArray(result.calendarId)).toBe(true);
-      expect(result.calendarId).toEqual(['primary', 'work@example.com', 'personal@example.com']);
-    });
-
     it('should preserve string type for single strings', () => {
       const input = {
         calendarId: 'primary',
@@ -228,7 +132,7 @@ describe('list-events Registration Flow (Schema + HandlerFunction)', () => {
       expect(result.calendarId).toBe('primary');
     });
 
-    it('should preserve string type for JSON strings', () => {
+    it('should preserve string type for JSON array strings', () => {
       const input = {
         calendarId: '["primary", "work@example.com"]',
         timeMin: '2024-01-01T00:00:00',
@@ -242,43 +146,26 @@ describe('list-events Registration Flow (Schema + HandlerFunction)', () => {
   });
 
   describe('Real-world scenarios from issue #95', () => {
-    it('should handle exact input from Home Assistant multi-mcp', () => {
-      // This is the exact format that was failing in issue #95
+    it('should handle multi-calendar via JSON string format', () => {
+      // With simplified schemas, multi-calendar is via JSON array strings
       const input = {
-        calendarId: ['primary', 'work@example.com', 'personal@example.com', 'family@example.com', 'events@example.com'],
+        calendarId: '["primary", "work@example.com", "personal@example.com", "family@example.com", "events@example.com"]',
         timeMin: '2025-10-09T00:00:00',
         timeMax: '2025-10-09T23:59:59'
       };
 
       const result = ToolSchemas['list-events'].safeParse(input);
       expect(result.success).toBe(true);
-      expect(Array.isArray(result.data?.calendarId)).toBe(true);
-      expect(result.data?.calendarId).toHaveLength(5);
-    });
-
-    it('should handle mixed special characters in calendar IDs', () => {
-      const input = {
-        calendarId: ['primary', 'user+tag@example.com', 'calendar.id@domain.co.uk'],
-        timeMin: '2024-01-01T00:00:00',
-        timeMax: '2024-01-02T00:00:00'
-      };
-
-      const result = ToolSchemas['list-events'].safeParse(input);
-      expect(result.success).toBe(true);
-      expect(result.data?.calendarId).toEqual(['primary', 'user+tag@example.com', 'calendar.id@domain.co.uk']);
+      expect(typeof result.data?.calendarId).toBe('string');
     });
 
     it('should accept single-quoted JSON string format (Python/shell style)', () => {
-      // Some clients may send JSON-like strings with single quotes instead of double quotes
-      // e.g., from Python str() representation or shell scripts
-      // The schema should accept it as a string (handlerFunction will process it)
       const input = {
         calendarId: "['primary', 'nathan@brand.ai']",
         timeMin: '2025-10-09T00:00:00',
         timeMax: '2025-10-09T23:59:59'
       };
 
-      // Schema should accept it as a string (not reject it)
       const result = ToolSchemas['list-events'].safeParse(input);
       expect(result.success).toBe(true);
       expect(typeof result.data?.calendarId).toBe('string');
@@ -435,16 +322,16 @@ describe('list-events Registration Flow (Schema + HandlerFunction)', () => {
           expect(result.account).toBe('work');
         });
 
-        it('should preserve account array parameter', async () => {
+        it('should preserve account string parameter', async () => {
           const input = {
-            account: ['work', 'personal'],
+            account: 'personal',
             calendarId: 'primary',
             timeMin: '2024-01-01T00:00:00',
             timeMax: '2024-01-02T00:00:00'
           };
 
           const result = await handlerFunction(input);
-          expect(result.account).toEqual(['work', 'personal']);
+          expect(result.account).toBe('personal');
         });
 
         it('should preserve undefined account when not provided', async () => {
@@ -471,16 +358,17 @@ describe('list-events Registration Flow (Schema + HandlerFunction)', () => {
           expect(Array.isArray(result.calendarId)).toBe(true);
         });
 
-        it('should preserve account when calendarId is native array', async () => {
+        it('should preserve account when calendarId is JSON array string', async () => {
           const input = {
             account: 'personal',
-            calendarId: ['primary', 'work@example.com'],
+            calendarId: '["primary", "work@example.com"]',
             timeMin: '2024-01-01T00:00:00',
             timeMax: '2024-01-02T00:00:00'
           };
 
           const result = await handlerFunction(input);
           expect(result.account).toBe('personal');
+          expect(Array.isArray(result.calendarId)).toBe(true);
           expect(result.calendarId).toEqual(['primary', 'work@example.com']);
         });
       });

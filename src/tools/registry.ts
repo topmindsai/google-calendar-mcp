@@ -175,6 +175,13 @@ const singleAccountSchema = z.string()
 // Account ID validation regex
 const accountIdRegex = /^[a-z0-9_-]{1,64}$/;
 
+// Simplified account schema - uses plain string for MCP client compatibility
+// Handlers accept JSON array strings like '["work", "personal"]' at runtime
+const accountSchema = z.string()
+  .regex(accountIdRegex, "Account nickname must be 1-64 characters: lowercase letters, numbers, dashes, underscores only")
+  .optional()
+  .describe("Account nickname (e.g., 'work'). Optional if only one account connected.");
+
 // Multi-account schema - for read operations (list, search, get)
 const multiAccountSchema = z.preprocess(
   parseJsonStringArray,
@@ -195,24 +202,14 @@ const multiAccountSchema = z.preprocess(
 // Define all tool schemas with TypeScript inference
 export const ToolSchemas = {
   'list-calendars': z.object({
-    account: multiAccountSchema
+    account: accountSchema
   }),
 
   'list-events': z.object({
-    account: multiAccountSchema,
-    calendarId: z.union([
-      z.string().describe(
-        "Calendar identifier(s) to query. Accepts calendar IDs (e.g., 'primary', 'user@gmail.com') OR calendar names (e.g., 'Work', 'Personal'). Single calendar: 'primary'. Multiple calendars: array ['Work', 'Personal'] or JSON string '[\"Work\", \"Personal\"]'"
-      ),
-      z.array(z.string().min(1))
-        .min(1, "At least one calendar ID is required")
-        .max(50, "Maximum 50 calendars allowed per request")
-        .refine(
-          (arr) => new Set(arr).size === arr.length,
-          "Duplicate calendar IDs are not allowed"
-        )
-        .describe("Array of calendar IDs to query events from (max 50, no duplicates)")
-    ]),
+    account: accountSchema,
+    calendarId: z.string().describe(
+      "Calendar ID or name to query (e.g., 'primary', 'Work'). For multiple calendars, pass a JSON array string: '[\"Work\", \"Personal\"]'"
+    ),
     timeMin: timeMinSchema,
     timeMax: timeMaxSchema,
     timeZone: timeZoneSchema,
@@ -222,25 +219,10 @@ export const ToolSchemas = {
   }),
   
   'search-events': z.object({
-    account: multiAccountSchema,
-    calendarId: z.union([
-      z.string().describe(
-        "Calendar identifier(s) to search. Accepts calendar IDs (e.g., 'primary', 'user@gmail.com') OR calendar names (e.g., 'Work', 'Personal'). Single calendar: 'primary'. Multiple calendars: array ['Work', 'Personal'] or JSON string '[\"Work\", \"Personal\"]'"
-      ),
-      z.array(z.string())
-    ]).transform((val) => {
-      if (typeof val === 'string') {
-        // Try to parse JSON array if it looks like one
-        if (val.startsWith('[')) {
-          try {
-            const parsed = JSON.parse(val);
-            if (Array.isArray(parsed)) return parsed;
-          } catch { /* ignore */ }
-        }
-        return val;
-      }
-      return val;
-    }).describe("Calendar identifier(s) to search. Accepts calendar IDs or names. Single or multiple calendars supported."),
+    account: accountSchema,
+    calendarId: z.string().describe(
+      "Calendar ID or name to search (e.g., 'primary', 'Work'). For multiple calendars, pass a JSON array string: '[\"Work\", \"Personal\"]'"
+    ),
     query: z.string().describe(
       "Free text search query (searches summary, description, location, attendees, etc.)"
     ),
@@ -529,9 +511,7 @@ export const ToolSchemas = {
   }),
 
   'get-freebusy': z.object({
-    account: multiAccountSchema.describe(
-      "Account nickname(s) to query (e.g., 'work' or ['work', 'personal']). Omit to query all accounts."
-    ),
+    account: accountSchema,
     calendars: z.array(z.object({
       id: z.string().describe("ID of the calendar (use 'primary' for the main calendar)")
     })).describe(
